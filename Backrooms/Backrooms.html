@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Backrooms — Level 0</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#080807;font-family:Arial,sans-serif;touch-action:none}canvas{display:block;width:100%;height:100%}
+#start{position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:rgba(10,9,5,.92);color:#eee;padding:24px;text-align:center}
+.panel{max-width:620px}.title{font-size:clamp(34px,8vw,58px);letter-spacing:7px;color:#d8cc70;text-shadow:0 0 22px rgba(216,204,112,.35);margin:0 0 6px}.sub{color:#c8c08a;letter-spacing:2px;font-size:13px}.desc{color:#bbb;line-height:1.55;margin:18px auto;max-width:520px}.startbtn{display:inline-block;padding:14px 22px;border:1px solid #8a844f;border-radius:8px;background:#262316;color:#f3efc9;font-weight:700;letter-spacing:1px;cursor:pointer}.pc{display:block;margin-top:14px;font-size:12px;color:#777}.hidden{display:none!important}
+#hud{position:fixed;left:14px;bottom:12px;color:rgba(255,255,255,.55);font-size:11px;z-index:8;pointer-events:none;letter-spacing:.6px}#level{position:fixed;top:12px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.45);z-index:8;font-size:11px;letter-spacing:3px;pointer-events:none}#cross{position:fixed;left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;background:rgba(255,255,255,.58);border-radius:50%;z-index:8;pointer-events:none}
+#joy{position:fixed;left:18px;bottom:25px;width:130px;height:130px;border-radius:50%;border:2px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);z-index:12;display:none}.stick{position:absolute;left:37px;top:37px;width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.18)}#lookHint{position:fixed;right:18px;bottom:42px;color:rgba(255,255,255,.22);font-size:11px;z-index:9;display:none}
+#quality{position:fixed;right:12px;top:10px;z-index:9;color:rgba(255,255,255,.28);font-size:10px}
+#error{position:fixed;inset:0;z-index:50;background:#111;color:#fff;padding:28px;font-family:Arial,sans-serif;display:none}
+@media (pointer:coarse){#joy,#lookHint{display:block}#cross,#hud{display:none}.pc{display:none}}
+</style>
+</head>
+<body>
+<div id="start"><div class="panel"><h1 class="title">THE BACKROOMS</h1><div class="sub">LEVEL 0 — HABITUAL ROOMS</div><p class="desc">A quiet, endless maze of yellow rooms. Find your way through the corridors. There is no map.</p><button class="startbtn" id="startBtn">ENTER LEVEL 0</button><div class="pc">PC: WASD + mouse · Shift to sprint · Esc releases the mouse<br>Mobile: left joystick to move · drag the right side to look</div></div></div>
+<div id="level">LEVEL 0</div><div id="cross"></div><div id="hud">WASD · MOUSE LOOK · SHIFT SPRINT</div><div id="quality"></div><div id="joy"><div class="stick" id="stick"></div></div><div id="lookHint">DRAG TO LOOK</div><div id="error"><h2>3D engine failed to load.</h2><p>Check your internet connection and reload the page. This version intentionally uses a CDN for Three.js.</p></div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js';
+
+const start=document.getElementById('start'), startBtn=document.getElementById('startBtn'), joy=document.getElementById('joy'), stick=document.getElementById('stick'), errorBox=document.getElementById('error');
+try{
+const isMobile=matchMedia('(pointer:coarse)').matches;
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x9b9159);
+scene.fog=new THREE.Fog(0x9b9159,26,105);
+const camera=new THREE.PerspectiveCamera(isMobile?78:75,innerWidth/innerHeight,.05,120);
+camera.position.set(3.2,1.62,3.2);
+let yaw=0, pitch=0;
+const renderer=new THREE.WebGLRenderer({antialias:!isMobile,powerPreference:'high-performance'});
+renderer.setPixelRatio(isMobile?Math.min(devicePixelRatio,1.15):Math.min(devicePixelRatio,1.6));
+renderer.setSize(innerWidth,innerHeight,false);
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.shadowMap.enabled=false;
+document.body.appendChild(renderer.domElement);
+document.getElementById('quality').textContent=isMobile?'MOBILE MODE':'PC MODE';
+
+// Simple lighting: cheap enough for phones, still gives the fluorescent look.
+scene.add(new THREE.HemisphereLight(0xfff5cd,0x2b2819,1.6));
+const key=new THREE.DirectionalLight(0xfff4c2,0.9); key.position.set(0,8,4); scene.add(key);
+
+const CELL=7, N=17, WORLD=N*CELL;
+const wallH=4.0, wallT=.24;
+function makeTexture(base, dark, speckle, lines){
+  const c=document.createElement('canvas'); c.width=256; c.height=256; const g=c.getContext('2d');
+  g.fillStyle=base; g.fillRect(0,0,256,256);
+  for(let i=0;i<900;i++){
+    const x=Math.random()*256,y=Math.random()*256,a=.03+Math.random()*.13;
+    g.fillStyle=`rgba(40,35,20,${a})`; g.fillRect(x,y,1+Math.random()*3,1+Math.random()*3);
+  }
+  if(lines){ g.strokeStyle='rgba(80,65,25,.12)'; g.lineWidth=1; for(let y=0;y<256;y+=22){g.beginPath();g.moveTo(0,y+Math.random()*3);g.lineTo(256,y+Math.random()*3);g.stroke()} }
+  if(dark){ const gr=g.createLinearGradient(0,0,256,256); gr.addColorStop(0,'rgba(255,244,160,.10)'); gr.addColorStop(1,'rgba(45,35,10,.16)'); g.fillStyle=gr; g.fillRect(0,0,256,256); }
+  const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.anisotropy=1; return t;
+}
+const wallTex=makeTexture('#c8bd6b',true,true,true); wallTex.repeat.set(2.2,1.4);
+const floorTex=makeTexture('#736c4a',true,false,false); floorTex.repeat.set(WORLD/3,WORLD/3);
+const ceilingTex=makeTexture('#aaa372',false,true,false); ceilingTex.repeat.set(WORLD/4,WORLD/4);
+const carpetTex=makeTexture('#80784f',true,false,true); carpetTex.repeat.set(3,3);
+const floorMat=new THREE.MeshStandardMaterial({map:floorTex,color:0xffffff,roughness:1});
+const wallMat=new THREE.MeshStandardMaterial({map:wallTex,color:0xffffff,roughness:.98});
+const ceilingMat=new THREE.MeshStandardMaterial({map:ceilingTex,color:0xffffff,roughness:1});
+const carpetMat=new THREE.MeshStandardMaterial({map:carpetTex,color:0xffffff,roughness:1});
+const lightMat=new THREE.MeshBasicMaterial({color:0xfff4c9});
+
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(WORLD,WORLD,1,1),floorMat); floor.rotation.x=-Math.PI/2; scene.add(floor);
+const ceiling=new THREE.Mesh(new THREE.PlaneGeometry(WORLD,WORLD,1,1),ceilingMat); ceiling.rotation.x=Math.PI/2; ceiling.position.y=wallH; scene.add(ceiling);
+
+// Deterministic maze: carve a connected set of rooms/corridors, avoiding thousands of objects.
+let seed=734921;
+function rand(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}
+const openH=Array.from({length:N+1},()=>Array(N).fill(false));
+const openV=Array.from({length:N},()=>Array(N+1).fill(false));
+const seen=Array.from({length:N},()=>Array(N).fill(false));
+const stack=[[0,0]]; seen[0][0]=true;
+while(stack.length){const [x,z]=stack[stack.length-1]; const options=[];
+ if(x>0&&!seen[z][x-1])options.push([-1,0]);if(x<N-1&&!seen[z][x+1])options.push([1,0]);if(z>0&&!seen[z-1][x])options.push([0,-1]);if(z<N-1&&!seen[z+1][x])options.push([0,1]);
+ if(!options.length){stack.pop();continue} const [dx,dz]=options[Math.floor(rand()*options.length)];
+ if(dx===1)openV[z][x+1]=true;if(dx===-1)openV[z][x]=true;if(dz===1)openH[z+1][x]=true;if(dz===-1)openH[z][x]=true;
+ const nx=x+dx,nz=z+dz;seen[nz][nx]=true;stack.push([nx,nz]);
+}
+// A few extra openings create wider, less predictable intersections.
+for(let i=0;i<30;i++){const x=1+Math.floor(rand()*(N-1)),z=1+Math.floor(rand()*(N-1)); if(rand()<.5)openV[z][x]=true; else openH[z][x]=true}
+
+const wallGeoH=new THREE.BoxGeometry(CELL+wallT,wallH,wallT);
+const wallGeoV=new THREE.BoxGeometry(wallT,wallH,CELL+wallT);
+const hData=[],vData=[]; const colliders=[];
+function addH(x,z){hData.push({x,z});colliders.push({minX:x-(CELL+wallT)/2,maxX:x+(CELL+wallT)/2,minZ:z-wallT/2,maxZ:z+wallT/2})}
+function addV(x,z){vData.push({x,z});colliders.push({minX:x-wallT/2,maxX:x+wallT/2,minZ:z-(CELL+wallT)/2,maxZ:z+(CELL+wallT)/2})}
+for(let z=0;z<=N;z++)for(let x=0;x<N;x++){if(z===0||z===N||!openH[z][x])addH((x+.5)*CELL-WORLD/2,z*CELL-WORLD/2)}
+for(let z=0;z<N;z++)for(let x=0;x<=N;x++){if(x===0||x===N||!openV[z][x])addV(x*CELL-WORLD/2,(z+.5)*CELL-WORLD/2)}
+function instanced(geo,data,mat){const m=new THREE.InstancedMesh(geo,mat,data.length);const dummy=new THREE.Object3D();data.forEach((p,i)=>{dummy.position.set(p.x,wallH/2,p.z);dummy.updateMatrix();m.setMatrixAt(i,dummy.matrix)});m.instanceMatrix.needsUpdate=true;scene.add(m)}
+instanced(wallGeoH,hData,wallMat);instanced(wallGeoV,vData,wallMat);
+// Thin repeating molding and baseboard strips give the walls the familiar Level 0 silhouette.
+const baseMat=new THREE.MeshBasicMaterial({color:0x8f854d});
+for(let z=0;z<=N;z++)for(let x=0;x<N;x++){
+  if(z===0||z===N||!openH[z][x]){
+    const m=new THREE.Mesh(new THREE.BoxGeometry(CELL+wallT,.12,.32),baseMat);
+    m.position.set((x+.5)*CELL-WORLD/2,.10,z*CELL-WORLD/2); scene.add(m);
+  }
+}
+for(let z=0;z<N;z++)for(let x=0;x<=N;x++){
+  if(x===0||x===N||!openV[z][x]){
+    const m=new THREE.Mesh(new THREE.BoxGeometry(.32,.12,CELL+wallT),baseMat);
+    m.position.set(x*CELL-WORLD/2,.10,(z+.5)*CELL-WORLD/2); scene.add(m);
+  }
+}
+
+
+// Carpet grid and a small number of fluorescent fixtures.
+const tileGeo=new THREE.PlaneGeometry(CELL-0.06,CELL-0.06);
+for(let z=0;z<N;z++)for(let x=0;x<N;x++){if((x*13+z*7)%4===0){const t=new THREE.Mesh(tileGeo,carpetMat);t.rotation.x=-Math.PI/2;t.position.set((x+.5)*CELL-WORLD/2,.008,(z+.5)*CELL-WORLD/2);scene.add(t)}}
+const fixtureGeo=new THREE.BoxGeometry(2.3,.06,.34);
+for(let z=0;z<N;z+=2)for(let x=0;x<N;x+=2){const fx=(x+.5)*CELL-WORLD/2,fz=(z+.5)*CELL-WORLD/2;const f=new THREE.Mesh(fixtureGeo,lightMat);f.position.set(fx,wallH-.05,fz);scene.add(f)}
+
+// Player collision against wall AABBs.
+const radius=.34;
+function freeAt(x,z){for(const b of colliders){if(x>b.minX-radius&&x<b.maxX+radius&&z>b.minZ-radius&&z<b.maxZ+radius)return false}return x>-WORLD/2+radius&&x<WORLD/2-radius&&z>-WORLD/2+radius&&z<WORLD/2-radius}
+if(!freeAt(camera.position.x,camera.position.z)){ outer: for(let zz=0;zz<N;zz++) for(let xx=0;xx<N;xx++){const cx=(xx+.5)*CELL-WORLD/2,cz=(zz+.5)*CELL-WORLD/2;if(freeAt(cx,cz)){camera.position.set(cx,1.62,cz);break outer}}}
+function move(dx,dz){let nx=camera.position.x+dx,nz=camera.position.z;if(freeAt(nx,nz))camera.position.x=nx;nx=camera.position.x;nz=camera.position.z+dz;if(freeAt(nx,nz))camera.position.z=nz}
+
+// PC input.
+const keys={}; addEventListener('keydown',e=>keys[e.code]=true); addEventListener('keyup',e=>keys[e.code]=false);
+let pointerLocked=false; let draggingMouse=false; renderer.domElement.tabIndex=0;
+renderer.domElement.addEventListener('click',()=>{if(!isMobile && start.classList.contains('hidden')) renderer.domElement.requestPointerLock?.()});
+document.addEventListener('pointerlockchange',()=>{pointerLocked=document.pointerLockElement===renderer.domElement});
+renderer.domElement.addEventListener('mousedown',()=>draggingMouse=true);
+addEventListener('mouseup',()=>draggingMouse=false);
+addEventListener('mousemove',e=>{if(!isMobile && (pointerLocked || draggingMouse)){const dx=e.movementX||0, dy=e.movementY||0; yaw-=dx*.0022; pitch-=dy*.0022; pitch=Math.max(-1.35,Math.min(1.35,pitch))}});
+addEventListener('keydown',e=>{if(['KeyW','KeyA','KeyS','KeyD','ShiftLeft','ShiftRight','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();});
+
+// Touch controls.
+let joyId=null,joyX=0,joyY=0,lookId=null,lastTX=0,lastTY=0;
+function setStick(dx,dy){const max=42, len=Math.hypot(dx,dy), s=len>max?max/len:1;joyX=(dx*s)/max;joyY=(dy*s)/max;stick.style.transform=`translate(${dx*s}px,${dy*s}px)`}
+joy.addEventListener('touchstart',e=>{const t=e.changedTouches[0];joyId=t.identifier;const r=joy.getBoundingClientRect();setStick(t.clientX-(r.left+r.width/2),t.clientY-(r.top+r.height/2));e.preventDefault()},{passive:false});
+joy.addEventListener('touchmove',e=>{for(const t of e.changedTouches)if(t.identifier===joyId){const r=joy.getBoundingClientRect();setStick(t.clientX-(r.left+r.width/2),t.clientY-(r.top+r.height/2))}e.preventDefault()},{passive:false});
+joy.addEventListener('touchend',e=>{for(const t of e.changedTouches)if(t.identifier===joyId){joyId=null;joyX=joyY=0;stick.style.transform='translate(0,0)'}e.preventDefault()},{passive:false});
+renderer.domElement.addEventListener('touchstart',e=>{for(const t of e.changedTouches){if(t.clientX>innerWidth*.38){lookId=t.identifier;lastTX=t.clientX;lastTY=t.clientY;break}}},{passive:false});
+renderer.domElement.addEventListener('touchmove',e=>{e.preventDefault();for(const t of e.changedTouches)if(t.identifier===lookId){yaw-=(t.clientX-lastTX)*.004;pitch-=(t.clientY-lastTY)*.004;pitch=Math.max(-1.35,Math.min(1.35,pitch));lastTX=t.clientX;lastTY=t.clientY}} ,{passive:false});
+renderer.domElement.addEventListener('touchend',e=>{for(const t of e.changedTouches)if(t.identifier===lookId)lookId=null},{passive:false});
+
+// Start game.
+startBtn.addEventListener('click',e=>{e.stopPropagation();start.classList.add('hidden');renderer.domElement.focus();if(!isMobile) renderer.domElement.requestPointerLock?.()});
+addEventListener('keydown',e=>{if(!start.classList.contains('hidden') && (e.code==='Enter'||e.code==='Space')){start.classList.add('hidden');renderer.domElement.focus();if(!isMobile) renderer.domElement.requestPointerLock?.()}});
+
+const forward=new THREE.Vector3(),right=new THREE.Vector3(); let last=performance.now(),bob=0;
+function loop(now){requestAnimationFrame(loop);const dt=Math.min((now-last)/1000,.035);last=now;
+ camera.rotation.order='YXZ';camera.rotation.y=yaw;camera.rotation.x=pitch;
+ const sprint=(keys.ShiftLeft||keys.ShiftRight)&&!isMobile; let mx=0,mz=0;
+ if(keys.KeyA)mx-=1;if(keys.KeyD)mx+=1;if(keys.KeyW)mz-=1;if(keys.KeyS)mz+=1;
+ if(isMobile){mx+=joyX;mz+=joyY}
+ // Normalize so diagonal movement is never faster. W is forward, S is backward.
+ const inputLen=Math.hypot(mx,mz); if(inputLen>1){mx/=inputLen;mz/=inputLen}
+ const moving=inputLen>0.08; if(moving){const speed=sprint?6.2:3.8;
+   forward.set(-Math.sin(yaw),0,-Math.cos(yaw));
+   right.set(Math.cos(yaw),0,-Math.sin(yaw));
+   const dx=(right.x*mx+forward.x*(-mz))*speed*dt;
+   const dz=(right.z*mx+forward.z*(-mz))*speed*dt;
+   move(dx,dz);
+   bob+=dt*(sprint?14:10); camera.position.y=1.62+(isMobile?Math.sin(bob)*.018:Math.sin(bob)*.012);
+ } else camera.position.y+=(1.62-camera.position.y)*Math.min(1,dt*8);
+ renderer.render(scene,camera)}
+requestAnimationFrame(loop);
+
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setPixelRatio(isMobile?Math.min(devicePixelRatio,1.15):Math.min(devicePixelRatio,1.6));renderer.setSize(innerWidth,innerHeight,false)});
+}catch(err){console.error(err);errorBox.style.display='block';start.classList.add('hidden')}
+</script>
+</body></html>

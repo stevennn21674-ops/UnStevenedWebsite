@@ -1,0 +1,11 @@
+{
+  "games": [
+    {
+      "folder": "TestGame",
+      "config": "GameConfig.txt",
+      "page": "Test.html",
+      "name": "Test",
+      "thumbnail": ""
+    }
+  ]
+}

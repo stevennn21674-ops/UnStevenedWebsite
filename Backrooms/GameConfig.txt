@@ -1,0 +1,3 @@
+GameName: Test
+HtmlName: Backrooms.html
+HtmlThumnail: Test.png
