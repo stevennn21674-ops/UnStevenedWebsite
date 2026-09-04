@@ -1,3 +1,0 @@
-GameName: Test
-HtmlName: Test.html
-HtmlThumnail:
